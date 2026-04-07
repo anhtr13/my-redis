@@ -17,7 +17,11 @@ async fn main() -> anyhow::Result<()> {
         let stream = listener.accept().await;
         match stream {
             Ok((stream, sockaddr)) => {
-                handler(stream, sockaddr).await?;
+                tokio::spawn(async move {
+                    if let Err(e) = handler(stream, sockaddr).await {
+                        println!("error: {e}");
+                    }
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
