@@ -31,14 +31,17 @@ async fn handler(stream: TcpStream, _sockaddr: SocketAddr) -> anyhow::Result<()>
     let mut reader = BufReader::new(reader);
     let mut buffer = String::new();
 
-    let res = reader.read_line(&mut buffer).await;
-    match res {
-        Err(e) => Err(e.into()),
-        Ok(0) => Ok(()),
-        Ok(_) => {
-            eprintln!("cmd: {buffer}");
-            writer.write_all("+PONG\r\n".as_bytes()).await?;
-            Ok(())
+    loop {
+        let result = reader.read_line(&mut buffer).await;
+        match result {
+            Err(e) => return Err(e.into()),
+            Ok(0) => return Ok(()),
+            Ok(_) => {
+                if buffer.contains("PING") {
+                    writer.write_all("+PONG\r\n".as_bytes()).await?;
+                }
+                buffer.clear();
+            }
         }
     }
 }
