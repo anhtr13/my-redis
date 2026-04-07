@@ -1,18 +1,44 @@
-use std::net::TcpListener;
+use std::net::SocketAddr;
 
-fn main() {
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::{TcpListener, TcpStream},
+};
+
+#[tokio::main()]
+async fn main() -> anyhow::Result<()> {
     println!("Logs from program:");
 
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:6379")
+        .await
+        .expect("failed to listening");
 
-    for stream in listener.incoming() {
+    loop {
+        let stream = listener.accept().await;
         match stream {
-            Ok(_stream) => {
-                println!("accepted new connection");
+            Ok((stream, sockaddr)) => {
+                handler(stream, sockaddr).await?;
             }
             Err(e) => {
                 println!("error: {}", e);
             }
+        }
+    }
+}
+
+async fn handler(stream: TcpStream, _sockaddr: SocketAddr) -> anyhow::Result<()> {
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut buffer = String::new();
+
+    let res = reader.read_line(&mut buffer).await;
+    match res {
+        Err(e) => Err(e.into()),
+        Ok(0) => Ok(()),
+        Ok(_) => {
+            eprintln!("cmd: {buffer}");
+            writer.write_all("+PONG\r\n".as_bytes()).await?;
+            Ok(())
         }
     }
 }
