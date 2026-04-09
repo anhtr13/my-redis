@@ -8,7 +8,7 @@ use std::{
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DataType {
     SimpleString {
         value: String,
@@ -22,12 +22,14 @@ pub enum DataType {
     BulkString {
         value: String,
     },
+    NullBulkString,
     BulkError {
         value: String,
     },
     Array {
         value: Vec<DataType>,
     },
+    NullBulkArray,
     Null,
     Boolean {
         value: bool,
@@ -75,6 +77,9 @@ impl Display for DataType {
             Self::BulkString { value } => {
                 write!(f, "{value}")
             }
+            Self::NullBulkString => {
+                write!(f, "$NULL")
+            }
             Self::BulkError { value } => {
                 write!(f, "!{value}")
             }
@@ -86,6 +91,9 @@ impl Display for DataType {
                 }
                 s.pop();
                 write!(f, "[{s}]")
+            }
+            Self::NullBulkArray => {
+                write!(f, "*NULL")
             }
             Self::Null => {
                 write!(f, "NULL")
@@ -153,15 +161,7 @@ impl Display for DataType {
 
 impl PartialEq for DataType {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (DataType::Double { value: d1 }, DataType::Double { value: d2 }) => {
-                if d1.is_nan() && d2.is_nan() {
-                    return true;
-                }
-                d1 == d2
-            }
-            _ => self == other,
-        }
+        self.serialize() == other.serialize()
     }
 }
 
@@ -169,82 +169,7 @@ impl Eq for DataType {}
 
 impl Hash for DataType {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Self::SimpleString { value } => {
-                '+'.hash(state);
-                value.hash(state);
-            }
-            Self::SimpleError { value } => {
-                '-'.hash(state);
-                value.hash(state);
-            }
-            Self::Integer { value } => {
-                value.hash(state);
-            }
-            Self::BulkString { value } => {
-                '$'.hash(state);
-                value.hash(state);
-            }
-            Self::BulkError { value } => {
-                '!'.hash(state);
-                value.hash(state);
-            }
-            Self::Array { value } => {
-                value.hash(state);
-            }
-            Self::Null => {
-                '_'.hash(state);
-            }
-            Self::Boolean { value } => {
-                value.hash(state);
-            }
-            Self::Double { value } => {
-                value.to_string().hash(state);
-            }
-            Self::BigNumber { value, positive } => {
-                positive.hash(state);
-                value.hash(state);
-            }
-            Self::VerbatimString { encoding, data } => {
-                encoding.hash(state);
-                data.hash(state);
-            }
-            Self::Map { value } => {
-                let mut s = String::from("%");
-                for (k, v) in value {
-                    s.push_str(&k.to_string());
-                    s.push(':');
-                    s.push_str(&v.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                format!("${{{s}}}").hash(state);
-            }
-            Self::Attribute { value } => {
-                let mut s = String::from("%");
-                for (k, v) in value {
-                    s.push_str(&k.to_string());
-                    s.push(':');
-                    s.push_str(&v.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                format!("|{{{s}}}").hash(state);
-            }
-            Self::Set { value } => {
-                let mut s = String::from("%");
-                for k in value {
-                    s.push_str(&k.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                format!("~[{s}]").hash(state);
-            }
-            Self::Push { value } => {
-                '>'.hash(state);
-                value.hash(state);
-            }
-        }
+        self.serialize().hash(state);
     }
 }
 
@@ -275,7 +200,7 @@ impl DataType {
                 '$' => {
                     let size = &buffer[1..buffer.len() - 2];
                     if size == "-1" {
-                        return Ok(Self::Null);
+                        return Ok(Self::NullBulkString);
                     }
 
                     let size: usize = size.parse()?;
@@ -293,7 +218,7 @@ impl DataType {
                 '*' => {
                     let size = &buffer[1..buffer.len() - 2];
                     if size == "-1" {
-                        return Ok(Self::Null);
+                        return Ok(Self::NullBulkArray);
                     }
                     let size: usize = size.parse()?;
                     let mut value = Vec::new();
@@ -326,15 +251,12 @@ impl DataType {
                 }
                 '(' => {
                     let mut num = &buffer[1..buffer.len() - 2];
-                    let positive = match num.chars().nth(0) {
-                        Some('-') => false,
-                        _ => true,
-                    };
+                    let positive = !matches!(num.chars().nth(0), Some('-'));
                     if !positive {
                         num = &num[1..];
                     }
                     let mut value = Vec::new();
-                    while num.len() > 0 {
+                    while !num.is_empty() {
                         let i = num.len() - num.len().min(9);
                         let n: u32 = num[i..].parse()?;
                         value.push(n);
@@ -432,6 +354,9 @@ impl DataType {
             Self::BulkString { value } => {
                 write!(res, "${}\r\n{}\r\n", value.len(), value).expect("failed writing to buffer");
             }
+            Self::NullBulkString => {
+                write!(res, "$-1\r\n").expect("failed writing to buffer");
+            }
             Self::BulkError { value } => {
                 write!(res, "!{}\r\n{}\r\n", value.len(), value).expect("failed writing to buffer");
             }
@@ -440,6 +365,9 @@ impl DataType {
                 for v in value {
                     res.extend(v.serialize());
                 }
+            }
+            Self::NullBulkArray => {
+                write!(res, "*-1\r\n").expect("failed writing to buffer");
             }
             Self::Null => {
                 write!(res, "_\r\n").expect("failed writing to buffer");

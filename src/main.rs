@@ -1,9 +1,12 @@
 mod data_type;
 mod handler;
+mod server;
+
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
-use crate::handler::handle;
+use crate::{handler::handle, server::Server};
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
@@ -13,13 +16,16 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("failed to listening");
 
+    let server = Arc::new(Server::new());
+
     loop {
         let stream = listener.accept().await;
         match stream {
             Ok((stream, sockaddr)) => {
+                let s = server.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle(stream, sockaddr).await {
-                        eprintln!("connection error: {e}");
+                    if let Err(e) = handle(s, stream, sockaddr).await {
+                        eprintln!("error when handle connection: {e}");
                     }
                 });
             }
