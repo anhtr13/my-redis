@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
+mod data_type;
+mod handler;
 
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
-};
+use tokio::net::TcpListener;
+
+use crate::handler::handle;
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
@@ -18,33 +18,13 @@ async fn main() -> anyhow::Result<()> {
         match stream {
             Ok((stream, sockaddr)) => {
                 tokio::spawn(async move {
-                    if let Err(e) = handler(stream, sockaddr).await {
-                        println!("error: {e}");
+                    if let Err(e) = handle(stream, sockaddr).await {
+                        eprintln!("connection error: {e}");
                     }
                 });
             }
             Err(e) => {
-                println!("error: {}", e);
-            }
-        }
-    }
-}
-
-async fn handler(stream: TcpStream, _sockaddr: SocketAddr) -> anyhow::Result<()> {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
-    let mut buffer = String::new();
-
-    loop {
-        let result = reader.read_line(&mut buffer).await;
-        match result {
-            Err(e) => return Err(e.into()),
-            Ok(0) => return Ok(()),
-            Ok(_) => {
-                if buffer.contains("PING") {
-                    writer.write_all("+PONG\r\n".as_bytes()).await?;
-                }
-                buffer.clear();
+                break Err(e.into());
             }
         }
     }
