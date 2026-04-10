@@ -1,12 +1,11 @@
-mod data_type;
-mod handler;
+mod protocol;
 mod server;
 
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
-use crate::{handler::handle, server::Server};
+use crate::server::{Storage, handle_connection};
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
@@ -16,15 +15,15 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("failed to listening");
 
-    let server = Arc::new(Server::new());
+    let storage = Arc::new(Storage::new());
 
     loop {
         let stream = listener.accept().await;
         match stream {
             Ok((stream, sockaddr)) => {
-                let s = server.clone();
+                let storage = storage.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle(s, stream, sockaddr).await {
+                    if let Err(e) = handle_connection(storage, stream, sockaddr).await {
                         eprintln!("error when handle connection: {e}");
                     }
                 });

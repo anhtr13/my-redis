@@ -1,11 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Display,
     hash::Hash,
     io::Write,
     pin::Pin,
 };
 
+use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 #[derive(Debug, Clone)]
@@ -60,103 +60,6 @@ pub enum DataType {
     Push {
         value: Vec<DataType>,
     },
-}
-
-impl Display for DataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::SimpleString { value } => {
-                write!(f, "{value}")
-            }
-            Self::SimpleError { value } => {
-                write!(f, "-{value}")
-            }
-            Self::Integer { value } => {
-                write!(f, "{value}")
-            }
-            Self::BulkString { value } => {
-                write!(f, "{value}")
-            }
-            Self::NullBulkString => {
-                write!(f, "$NULL")
-            }
-            Self::BulkError { value } => {
-                write!(f, "!{value}")
-            }
-            Self::Array { value } => {
-                let mut s = String::new();
-                for val in value {
-                    s.push_str(&val.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                write!(f, "[{s}]")
-            }
-            Self::NullBulkArray => {
-                write!(f, "*NULL")
-            }
-            Self::Null => {
-                write!(f, "NULL")
-            }
-            Self::Boolean { value } => {
-                write!(f, "{value}")
-            }
-            Self::Double { value } => {
-                write!(f, "{value}")
-            }
-            Self::BigNumber { value, positive } => {
-                let marker = if *positive { "" } else { "-" };
-                let mut s = String::new();
-                for n in value {
-                    s = format!("{n}{s}");
-                }
-                write!(f, "{marker}{s}")
-            }
-            Self::VerbatimString { encoding, data } => {
-                write!(f, "{encoding}:{data}")
-            }
-            Self::Map { value } => {
-                let mut s = String::from("%");
-                for (k, v) in value {
-                    s.push_str(&k.to_string());
-                    s.push(':');
-                    s.push_str(&v.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                write!(f, "{{{s}}}")
-            }
-            Self::Attribute { value } => {
-                let mut s = String::from("%");
-                for (k, v) in value {
-                    s.push_str(&k.to_string());
-                    s.push(':');
-                    s.push_str(&v.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                write!(f, "{{{s}}}")
-            }
-            Self::Set { value } => {
-                let mut s = String::from("%");
-                for k in value {
-                    s.push_str(&k.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                write!(f, "[{s}]")
-            }
-            Self::Push { value } => {
-                let mut s = String::new();
-                for val in value {
-                    s.push_str(&val.to_string());
-                    s.push(' ');
-                }
-                s.pop();
-                write!(f, "[{s}]")
-            }
-        }
-    }
 }
 
 impl PartialEq for DataType {
@@ -392,8 +295,9 @@ impl DataType {
                 let marker = if *positive { "" } else { "-" };
                 let mut num = String::new();
                 for n in value {
-                    num = format!("{n}{num}");
+                    num = format!("{:09}{}", n, num);
                 }
+                let num = num.trim_start_matches("0");
                 write!(res, "({marker}{num}\r\n").expect("failed writing to buffer");
             }
             Self::VerbatimString { encoding, data } => {
@@ -432,5 +336,70 @@ impl DataType {
             }
         }
         res
+    }
+}
+
+pub enum ClientCommand {
+    Ping,
+    Echo { echo_string: String },
+    Set { key: String, val: String, ttl: u64 },
+    Get { key: String },
+    Other,
+}
+
+impl ClientCommand {
+    pub fn from(data: DataType) -> Result<Self> {
+        if let DataType::Array { value } = data {
+            let mut args: Vec<_> = value
+                .into_iter()
+                .filter_map(|arg| match arg {
+                    DataType::BulkString { value } => Some(value),
+                    _ => None,
+                })
+                .collect();
+
+            anyhow::ensure!(args.len() > 0);
+
+            return match args[0].to_uppercase().as_str() {
+                "PING" => Ok(Self::Ping),
+                "ECHO" => {
+                    anyhow::ensure!(args.len() == 2);
+                    Ok(Self::Echo {
+                        echo_string: args.swap_remove(1),
+                    })
+                }
+                "SET" => {
+                    anyhow::ensure!(args.len() >= 3);
+                    let mut ttl = 0u64;
+                    let mut prev_arg = String::from("");
+                    while args.len() > 3 {
+                        let arg = args.pop().unwrap();
+                        match arg.to_uppercase().as_str() {
+                            "PX" => {
+                                ttl = prev_arg.parse()?;
+                                prev_arg = String::from("");
+                            }
+                            "EX" => {
+                                ttl = prev_arg.parse()?;
+                                ttl *= 1000;
+                                prev_arg = String::from("");
+                            }
+                            _ => prev_arg = arg,
+                        }
+                    }
+                    let val = args.pop().unwrap();
+                    let key = args.pop().unwrap();
+                    Ok(Self::Set { key, val, ttl })
+                }
+                "GET" => {
+                    anyhow::ensure!(args.len() == 2);
+                    Ok(Self::Get {
+                        key: args.swap_remove(1),
+                    })
+                }
+                _ => Ok(Self::Other),
+            };
+        }
+        anyhow::bail!("unknow command")
     }
 }
