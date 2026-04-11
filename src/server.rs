@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -21,7 +21,7 @@ struct KVObject {
 
 pub struct Storage {
     kv_bucket: Arc<Mutex<HashMap<String, KVObject>>>,
-    list_bucket: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    list_bucket: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
 }
 
 #[allow(unused)]
@@ -76,28 +76,37 @@ impl Storage {
         lock.remove(key).map(|obj| obj.value)
     }
 
+    pub async fn list_lpush(&self, key: String, mut vals: Vec<String>) -> usize {
+        let mut lock = self.list_bucket.lock().await;
+        let list = lock.entry(key).or_insert(VecDeque::new());
+        while let Some(val) = vals.pop() {
+            list.push_front(val);
+        }
+        list.len()
+    }
+
     pub async fn list_rpush(&self, key: String, mut vals: Vec<String>) -> usize {
         let mut lock = self.list_bucket.lock().await;
-        let v = lock.entry(key).or_insert(Vec::new());
-        v.append(&mut vals);
-        v.len()
+        let list = lock.entry(key).or_insert(VecDeque::new());
+        list.extend(vals);
+        list.len()
     }
 
     pub async fn list_lrange(&self, key: String, mut start: i64, mut stop: i64) -> Vec<String> {
         let mut lock = self.list_bucket.lock().await;
-        let v = lock.entry(key).or_insert(Vec::new());
+        let list = lock.entry(key).or_insert(VecDeque::new());
         if start < 0 {
-            start += v.len() as i64;
+            start += list.len() as i64;
         }
         if stop < 0 {
-            stop += v.len() as i64;
+            stop += list.len() as i64;
         }
         let start = start.max(0) as usize;
-        let stop = (stop.max(0) as usize + 1).min(v.len());
-        if v.is_empty() || start >= stop {
+        let stop = (stop.max(0) as usize + 1).min(list.len());
+        if list.is_empty() || start >= stop {
             return Vec::new();
         }
-        v[start..stop].to_vec()
+        list.make_contiguous()[start..stop].to_vec()
     }
 }
 
@@ -131,6 +140,11 @@ pub async fn handle_connection(
                         }
                         None => writer.write_all(b"$-1\r\n").await?,
                     }
+                }
+                Command::LPush { key, vals } => {
+                    let n = storage.list_lpush(key, vals).await;
+                    let res = format!(":{n}\r\n").into_bytes();
+                    writer.write_all(&res).await?;
                 }
                 Command::RPush { key, vals } => {
                     let n = storage.list_rpush(key, vals).await;
