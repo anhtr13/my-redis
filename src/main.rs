@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
-use crate::server::{Storage, handle_connection};
+use crate::server::{handler::handle_connection, storage::Storage};
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
