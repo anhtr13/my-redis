@@ -347,6 +347,7 @@ pub enum Command {
     LPush { key: String, vals: Vec<String> },
     RPush { key: String, vals: Vec<String> },
     LRange { key: String, start: i64, stop: i64 },
+    LLen { key: String },
     Other,
 }
 
@@ -418,6 +419,12 @@ impl Command {
                     let start: i64 = args.pop().unwrap().parse()?;
                     let key = args.pop().unwrap();
                     Ok(Self::LRange { key, start, stop })
+                }
+                "LLEN" => {
+                    anyhow::ensure!(args.len() == 2);
+                    Ok(Self::LLen {
+                        key: args.pop().unwrap(),
+                    })
                 }
                 _ => Ok(Self::Other),
             };

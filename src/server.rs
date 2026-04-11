@@ -108,6 +108,15 @@ impl Storage {
         }
         list.make_contiguous()[start..stop].to_vec()
     }
+
+    pub async fn list_llen(&self, key: String) -> usize {
+        let mut lock = self.list_bucket.lock().await;
+        let list = lock.get(&key);
+        match list {
+            Some(list) => list.len(),
+            None => 0,
+        }
+    }
 }
 
 pub async fn handle_connection(
@@ -143,13 +152,11 @@ pub async fn handle_connection(
                 }
                 Command::LPush { key, vals } => {
                     let n = storage.list_lpush(key, vals).await;
-                    let res = format!(":{n}\r\n").into_bytes();
-                    writer.write_all(&res).await?;
+                    writer.write_all(format!(":{n}\r\n").as_bytes()).await?;
                 }
                 Command::RPush { key, vals } => {
                     let n = storage.list_rpush(key, vals).await;
-                    let res = format!(":{n}\r\n").into_bytes();
-                    writer.write_all(&res).await?;
+                    writer.write_all(format!(":{n}\r\n").as_bytes()).await?;
                 }
                 Command::LRange { key, start, stop } => {
                     let vals: Vec<_> = storage
@@ -160,6 +167,12 @@ pub async fn handle_connection(
                         .collect();
                     let res = DataType::Array { value: vals };
                     writer.write_all(&res.serialize()).await?;
+                }
+                Command::LLen { key } => {
+                    let length = storage.list_llen(key).await;
+                    writer
+                        .write_all(format!(":{length}\r\n").as_bytes())
+                        .await?;
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
