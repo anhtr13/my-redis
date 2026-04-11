@@ -76,11 +76,21 @@ impl Storage {
         lock.remove(key).map(|obj| obj.value)
     }
 
-    pub async fn list_push(&self, key: String, mut vals: Vec<String>) -> usize {
+    pub async fn list_rpush(&self, key: String, mut vals: Vec<String>) -> usize {
         let mut lock = self.list_bucket.lock().await;
         let v = lock.entry(key).or_insert(Vec::new());
         v.append(&mut vals);
         v.len()
+    }
+
+    pub async fn list_lrange(&self, key: String, start: usize, stop: usize) -> Vec<String> {
+        let mut lock = self.list_bucket.lock().await;
+        let v = lock.entry(key).or_insert(Vec::new());
+        let stop = (stop + 1).min(v.len());
+        if v.is_empty() || start >= stop {
+            return Vec::new();
+        }
+        v[start..stop].to_vec()
     }
 }
 
@@ -116,9 +126,19 @@ pub async fn handle_connection(
                     }
                 }
                 Command::RPush { key, vals } => {
-                    let n = storage.list_push(key, vals).await;
+                    let n = storage.list_rpush(key, vals).await;
                     let res = format!(":{n}\r\n").into_bytes();
                     writer.write_all(&res).await?;
+                }
+                Command::LRange { key, start, stop } => {
+                    let vals: Vec<_> = storage
+                        .list_lrange(key, start, stop)
+                        .await
+                        .into_iter()
+                        .map(|value| DataType::BulkString { value })
+                        .collect();
+                    let res = DataType::Array { value: vals };
+                    writer.write_all(&res.serialize()).await?;
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },

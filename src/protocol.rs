@@ -341,10 +341,26 @@ impl DataType {
 
 pub enum Command {
     Ping,
-    Echo { echo_string: String },
-    Set { key: String, val: String, ttl: u64 },
-    Get { key: String },
-    RPush { key: String, vals: Vec<String> },
+    Echo {
+        echo_string: String,
+    },
+    Set {
+        key: String,
+        val: String,
+        ttl: u64,
+    },
+    Get {
+        key: String,
+    },
+    RPush {
+        key: String,
+        vals: Vec<String>,
+    },
+    LRange {
+        key: String,
+        start: usize,
+        stop: usize,
+    },
     Other,
 }
 
@@ -395,17 +411,21 @@ impl Command {
                 "GET" => {
                     anyhow::ensure!(args.len() == 2);
                     Ok(Self::Get {
-                        key: args.swap_remove(1),
+                        key: args.pop().unwrap(),
                     })
                 }
                 "RPUSH" => {
                     anyhow::ensure!(args.len() >= 3);
-                    let mut vals = Vec::new();
-                    while args.len() > 2 {
-                        vals.push(args.pop().unwrap());
-                    }
+                    let vals = args.split_off(2);
                     let key = args.pop().unwrap();
                     Ok(Self::RPush { key, vals })
+                }
+                "LRANGE" => {
+                    anyhow::ensure!(args.len() == 4);
+                    let stop: usize = args.pop().unwrap().parse()?;
+                    let start: usize = args.pop().unwrap().parse()?;
+                    let key = args.pop().unwrap();
+                    Ok(Self::LRange { key, start, stop })
                 }
                 _ => Ok(Self::Other),
             };
