@@ -83,10 +83,17 @@ impl Storage {
         v.len()
     }
 
-    pub async fn list_lrange(&self, key: String, start: usize, stop: usize) -> Vec<String> {
+    pub async fn list_lrange(&self, key: String, mut start: i64, mut stop: i64) -> Vec<String> {
         let mut lock = self.list_bucket.lock().await;
         let v = lock.entry(key).or_insert(Vec::new());
-        let stop = (stop + 1).min(v.len());
+        if start < 0 {
+            start += v.len() as i64;
+        }
+        if stop < 0 {
+            stop += v.len() as i64;
+        }
+        let start = start.max(0) as usize;
+        let stop = (stop.max(0) as usize + 1).min(v.len());
         if v.is_empty() || start >= stop {
             return Vec::new();
         }

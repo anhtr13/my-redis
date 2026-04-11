@@ -358,8 +358,8 @@ pub enum Command {
     },
     LRange {
         key: String,
-        start: usize,
-        stop: usize,
+        start: i64,
+        stop: i64,
     },
     Other,
 }
@@ -422,8 +422,8 @@ impl Command {
                 }
                 "LRANGE" => {
                     anyhow::ensure!(args.len() == 4);
-                    let stop: usize = args.pop().unwrap().parse()?;
-                    let start: usize = args.pop().unwrap().parse()?;
+                    let stop: i64 = args.pop().unwrap().parse()?;
+                    let start: i64 = args.pop().unwrap().parse()?;
                     let key = args.pop().unwrap();
                     Ok(Self::LRange { key, start, stop })
                 }
