@@ -71,7 +71,7 @@ impl Storage {
         None
     }
 
-    pub async fn kv_remove(&self, key: &str) -> Option<String> {
+    pub async fn kv_del(&self, key: &str) -> Option<String> {
         let mut lock = self.kv_bucket.lock().await;
         lock.remove(key).map(|obj| obj.value)
     }
@@ -116,6 +116,22 @@ impl Storage {
             Some(list) => list.len(),
             None => 0,
         }
+    }
+
+    pub async fn list_lpop(&self, key: String, mut n: usize) -> Option<Vec<String>> {
+        let mut lock = self.list_bucket.lock().await;
+        let list = lock.get_mut(&key);
+        if let Some(list) = list {
+            let mut res = Vec::new();
+            while let Some(val) = list.pop_front()
+                && n > 0
+            {
+                res.push(val);
+                n -= 1;
+            }
+            return Some(res);
+        }
+        None
     }
 }
 
@@ -173,6 +189,29 @@ pub async fn handle_connection(
                     writer
                         .write_all(format!(":{length}\r\n").as_bytes())
                         .await?;
+                }
+                Command::LPop { key, n } => {
+                    let res = storage.list_lpop(key, n).await;
+                    match res {
+                        Some(mut arr) => {
+                            if arr.is_empty() {
+                                writer.write_all(b"$-1\r\n").await?;
+                            } else if arr.len() == 1 {
+                                let res = DataType::BulkString {
+                                    value: arr.pop().unwrap(),
+                                };
+                                writer.write_all(&res.serialize()).await?;
+                            } else {
+                                let value: Vec<_> = arr
+                                    .into_iter()
+                                    .map(|val| DataType::BulkString { value: val })
+                                    .collect();
+                                let res = DataType::Array { value };
+                                writer.write_all(&res.serialize()).await?;
+                            }
+                        }
+                        None => writer.write_all(b"$-1\r\n").await?,
+                    }
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
