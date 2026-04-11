@@ -79,7 +79,7 @@ impl Storage {
     pub async fn list_lpush(&self, key: String, mut vals: Vec<String>) -> usize {
         let mut lock = self.list_bucket.lock().await;
         let list = lock.entry(key).or_insert(VecDeque::new());
-        while let Some(val) = vals.pop() {
+        for val in vals {
             list.push_front(val);
         }
         list.len()
