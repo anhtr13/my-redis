@@ -11,27 +11,29 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::protocol::{ClientCommand, DataType};
+use crate::protocol::{Command, DataType};
 
 #[derive(Clone)]
-pub struct SetObject {
+struct KVObject {
     value: String,
     expired_at: u128,
 }
 
 pub struct Storage {
-    set: Arc<Mutex<HashMap<String, SetObject>>>,
+    kv_bucket: Arc<Mutex<HashMap<String, KVObject>>>,
+    list_bucket: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 #[allow(unused)]
 impl Storage {
     pub fn new() -> Self {
         Self {
-            set: Arc::new(Mutex::new(HashMap::new())),
+            kv_bucket: Arc::new(Mutex::new(HashMap::new())),
+            list_bucket: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub async fn set(&self, key: String, value: String, ttl: u64) {
+    pub async fn kv_set(&self, key: String, value: String, ttl: u64) {
         let expired_at = if ttl > 0 {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -41,13 +43,13 @@ impl Storage {
         } else {
             0
         };
-        let value = SetObject { value, expired_at };
-        let mut lock = self.set.lock().await;
+        let value = KVObject { value, expired_at };
+        let mut lock = self.kv_bucket.lock().await;
         lock.insert(key, value);
     }
 
-    pub async fn get(&self, key: &str) -> Option<String> {
-        let mut lock = self.set.lock().await;
+    pub async fn kv_get(&self, key: &str) -> Option<String> {
+        let mut lock = self.kv_bucket.lock().await;
         let obj = lock.get(key);
         let mut still_alive = true;
         if let Some(obj) = obj {
@@ -69,9 +71,16 @@ impl Storage {
         None
     }
 
-    pub async fn delete(&self, key: &str) -> Option<String> {
-        let mut lock = self.set.lock().await;
+    pub async fn kv_remove(&self, key: &str) -> Option<String> {
+        let mut lock = self.kv_bucket.lock().await;
         lock.remove(key).map(|obj| obj.value)
+    }
+
+    pub async fn list_push(&self, key: String, value: String) -> usize {
+        let mut lock = self.list_bucket.lock().await;
+        let v = lock.entry(key).or_insert(Vec::new());
+        v.push(value);
+        v.len()
     }
 }
 
@@ -85,19 +94,19 @@ pub async fn handle_connection(
 
     loop {
         let data = DataType::deserialize(&mut reader).await?;
-        match ClientCommand::from(data) {
+        match Command::from(data) {
             Ok(cmd) => match cmd {
-                ClientCommand::Ping => writer.write_all(b"+PONG\r\n").await?,
-                ClientCommand::Echo { echo_string } => {
+                Command::Ping => writer.write_all(b"+PONG\r\n").await?,
+                Command::Echo { echo_string } => {
                     let res = format!("${}\r\n{}\r\n", echo_string.len(), echo_string).into_bytes();
                     writer.write_all(&res).await?;
                 }
-                ClientCommand::Set { key, val, ttl } => {
-                    storage.set(key, val, ttl).await;
+                Command::Set { key, val, ttl } => {
+                    storage.kv_set(key, val, ttl).await;
                     writer.write_all(b"+OK\r\n").await?;
                 }
-                ClientCommand::Get { key } => {
-                    let value = storage.get(&key).await;
+                Command::Get { key } => {
+                    let value = storage.kv_get(&key).await;
                     match value {
                         Some(value) => {
                             let res = format!("${}\r\n{}\r\n", value.len(), value).into_bytes();
@@ -106,7 +115,12 @@ pub async fn handle_connection(
                         None => writer.write_all(b"$-1\r\n").await?,
                     }
                 }
-                ClientCommand::Other => writer.write_all(b"+OK\r\n").await?,
+                Command::RPush { key, val } => {
+                    let n = storage.list_push(key, val).await;
+                    let res = format!(":{n}\r\n").into_bytes();
+                    writer.write_all(&res).await?;
+                }
+                Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
             Err(e) => {
                 let err = e.to_string();

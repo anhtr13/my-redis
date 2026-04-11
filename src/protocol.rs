@@ -339,15 +339,16 @@ impl DataType {
     }
 }
 
-pub enum ClientCommand {
+pub enum Command {
     Ping,
     Echo { echo_string: String },
     Set { key: String, val: String, ttl: u64 },
     Get { key: String },
+    RPush { key: String, val: String },
     Other,
 }
 
-impl ClientCommand {
+impl Command {
     pub fn from(data: DataType) -> Result<Self> {
         if let DataType::Array { value } = data {
             let mut args: Vec<_> = value
@@ -365,7 +366,7 @@ impl ClientCommand {
                 "ECHO" => {
                     anyhow::ensure!(args.len() == 2);
                     Ok(Self::Echo {
-                        echo_string: args.swap_remove(1),
+                        echo_string: args.pop().unwrap(),
                     })
                 }
                 "SET" => {
@@ -396,6 +397,12 @@ impl ClientCommand {
                     Ok(Self::Get {
                         key: args.swap_remove(1),
                     })
+                }
+                "RPUSH" => {
+                    anyhow::ensure!(args.len() == 3);
+                    let val = args.pop().unwrap();
+                    let key = args.pop().unwrap();
+                    Ok(Self::RPush { key, val })
                 }
                 _ => Ok(Self::Other),
             };
