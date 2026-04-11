@@ -123,8 +123,8 @@ impl Storage {
         let list = lock.get_mut(&key);
         if let Some(list) = list {
             let mut res = Vec::new();
-            while let Some(val) = list.pop_front()
-                && n > 0
+            while n > 0
+                && let Some(val) = list.pop_front()
             {
                 res.push(val);
                 n -= 1;
