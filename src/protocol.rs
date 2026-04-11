@@ -430,10 +430,11 @@ impl Command {
                 "LPOP" => {
                     anyhow::ensure!(args.len() == 2 || args.len() == 3);
                     let n: usize = if args.len() == 2 {
-                        0
+                        1
                     } else {
                         args.pop().unwrap().parse()?
                     };
+                    anyhow::ensure!(n >= 1);
                     let key = args.pop().unwrap();
                     Ok(Self::LPop { key, n })
                 }
