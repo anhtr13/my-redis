@@ -344,7 +344,7 @@ pub enum Command {
     Echo { echo_string: String },
     Set { key: String, val: String, ttl: u64 },
     Get { key: String },
-    RPush { key: String, val: String },
+    RPush { key: String, vals: Vec<String> },
     Other,
 }
 
@@ -399,10 +399,13 @@ impl Command {
                     })
                 }
                 "RPUSH" => {
-                    anyhow::ensure!(args.len() == 3);
-                    let val = args.pop().unwrap();
+                    anyhow::ensure!(args.len() >= 3);
+                    let mut vals = Vec::new();
+                    while args.len() > 2 {
+                        vals.push(args.pop().unwrap());
+                    }
                     let key = args.pop().unwrap();
-                    Ok(Self::RPush { key, val })
+                    Ok(Self::RPush { key, vals })
                 }
                 _ => Ok(Self::Other),
             };

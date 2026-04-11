@@ -76,10 +76,10 @@ impl Storage {
         lock.remove(key).map(|obj| obj.value)
     }
 
-    pub async fn list_push(&self, key: String, value: String) -> usize {
+    pub async fn list_push(&self, key: String, mut vals: Vec<String>) -> usize {
         let mut lock = self.list_bucket.lock().await;
         let v = lock.entry(key).or_insert(Vec::new());
-        v.push(value);
+        v.append(&mut vals);
         v.len()
     }
 }
@@ -115,8 +115,8 @@ pub async fn handle_connection(
                         None => writer.write_all(b"$-1\r\n").await?,
                     }
                 }
-                Command::RPush { key, val } => {
-                    let n = storage.list_push(key, val).await;
+                Command::RPush { key, vals } => {
+                    let n = storage.list_push(key, vals).await;
                     let res = format!(":{n}\r\n").into_bytes();
                     writer.write_all(&res).await?;
                 }
