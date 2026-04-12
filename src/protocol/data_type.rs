@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    io::Write,
     pin::Pin,
 };
 
@@ -196,43 +195,28 @@ impl DataType {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        let mut result = Vec::new();
         match self {
-            Self::SimpleString(value) => {
-                write!(result, "+{value}\r\n").expect("failed writing to buffer");
-            }
-            Self::SimpleError(value) => {
-                write!(result, "-{value}\r\n").expect("failed writing to buffer");
-            }
-            Self::Integer(value) => {
-                write!(result, ":{value}\r\n").expect("failed writing to buffer");
-            }
-            Self::BulkString(value) => {
-                write!(result, "${}\r\n{}\r\n", value.len(), value)
-                    .expect("failed writing to buffer");
-            }
-            Self::NullBulkString => {
-                write!(result, "$-1\r\n").expect("failed writing to buffer");
-            }
-            Self::BulkError(value) => {
-                write!(result, "!{}\r\n{}\r\n", value.len(), value)
-                    .expect("failed writing to buffer");
-            }
+            Self::SimpleString(value) => format!("+{value}\r\n").into_bytes(),
+            Self::SimpleError(value) => format!("-{value}\r\n").into_bytes(),
+            Self::Integer(value) => format!(":{value}\r\n").into_bytes(),
+            Self::BulkString(value) => format!("${}\r\n{}\r\n", value.len(), value).into_bytes(),
+            Self::NullBulkString => b"$-1\r\n".to_vec(),
+            Self::BulkError(value) => format!("!{}\r\n{}\r\n", value.len(), value).into_bytes(),
             Self::Array(value) => {
-                write!(result, "*{}\r\n", value.len()).expect("failed writing to buffer");
-                for v in value {
-                    result.extend(v.serialize());
-                }
+                let mut res = format!("*{}\r\n", value.len()).into_bytes();
+                let inner_arr: Vec<_> = value.iter().flat_map(|v| v.serialize()).collect();
+                res.extend(inner_arr);
+                res
             }
-            Self::NullBulkArray => {
-                write!(result, "*-1\r\n").expect("failed writing to buffer");
-            }
-            Self::Null => {
-                write!(result, "_\r\n").expect("failed writing to buffer");
-            }
+            Self::NullBulkArray => b"*-1\r\n".to_vec(),
+            Self::Null => b"_\r\n".to_vec(),
+
             Self::Boolean(value) => {
-                let b = if *value { 't' } else { 'f' };
-                write!(result, "#{b}\r\n").expect("failed writing to buffer");
+                if *value {
+                    b"#t\r\n".to_vec()
+                } else {
+                    b"#f\r\n".to_vec()
+                }
             }
             Self::Double(value) => {
                 let value = if value.is_nan() {
@@ -244,52 +228,52 @@ impl DataType {
                 } else {
                     &value.to_string()
                 };
-                write!(result, ",{value}\r\n").expect("failed writing to buffer");
+                format!(",{value}\r\n").into_bytes()
             }
             Self::BigNumber(positive, value) => {
                 let marker = if *positive { "" } else { "-" };
                 let mut num = String::new();
-                for chunk in value {
+                value.iter().for_each(|chunk| {
                     num = format!("{:09}{}", chunk, num);
-                }
+                });
                 let num = num.trim_start_matches("0");
-                write!(result, "({marker}{num}\r\n").expect("failed writing to buffer");
+                format!("({marker}{num}\r\n").into_bytes()
             }
-            Self::VerbatimString(encoding, data) => {
-                write!(
-                    result,
-                    "={}\r\n{encoding}:{data}\r\n",
-                    encoding.len() + data.len() + 1
-                )
-                .expect("failed writing to buffer");
-            }
+            Self::VerbatimString(encoding, data) => format!(
+                "={}\r\n{encoding}:{data}\r\n",
+                encoding.len() + data.len() + 1
+            )
+            .into_bytes(),
             Self::Map(value) => {
-                write!(result, "%{}\r\n", value.len()).expect("failed writing to buffer");
-                for (k, v) in value {
-                    result.extend(k.serialize());
-                    result.extend(v.serialize());
-                }
+                let mut res = format!("%{}\r\n", value.len()).into_bytes();
+                let inner: Vec<_> = value
+                    .iter()
+                    .flat_map(|(k, v)| [k.serialize(), v.serialize()].concat())
+                    .collect();
+                res.extend(inner);
+                res
             }
             Self::Attribute(value) => {
-                write!(result, "|{}\r\n", value.len()).expect("failed writing to buffer");
-                for (k, v) in value {
-                    result.extend(k.serialize());
-                    result.extend(v.serialize());
-                }
+                let mut res = format!("|{}\r\n", value.len()).into_bytes();
+                let inner: Vec<_> = value
+                    .iter()
+                    .flat_map(|(k, v)| [k.serialize(), v.serialize()].concat())
+                    .collect();
+                res.extend(inner);
+                res
             }
             Self::Set(value) => {
-                write!(result, "~{}\r\n", value.len()).expect("failed writing to buffer");
-                for v in value {
-                    result.extend(v.serialize());
-                }
+                let mut res = format!("~{}\r\n", value.len()).into_bytes();
+                let inner: Vec<_> = value.iter().flat_map(|v| v.serialize()).collect();
+                res.extend(inner);
+                res
             }
             Self::Push(value) => {
-                write!(result, ">{}\r\n", value.len()).expect("failed writing to buffer");
-                for v in value {
-                    result.extend(v.serialize());
-                }
+                let mut res = format!(">{}\r\n", value.len()).into_bytes();
+                let inner: Vec<_> = value.iter().flat_map(|v| v.serialize()).collect();
+                res.extend(inner);
+                res
             }
         }
-        result
     }
 }

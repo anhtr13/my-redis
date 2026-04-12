@@ -4,9 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tokio::{
-    sync::Mutex,
-};
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct KVObject {
@@ -28,22 +26,23 @@ impl Storage {
         }
     }
 
-    pub async fn kv_set(&self, key: String, value: String, ttl: u64) {
-        let expired_at = if ttl > 0 {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-                + ttl as u128
-        } else {
-            0
+    pub async fn set(&self, key: String, value: String, ttl: u64) {
+        let expired_at = match ttl {
+            0 => 0,
+            _ => {
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    + ttl as u128
+            }
         };
         let value = KVObject { value, expired_at };
         let mut lock = self.kv_bucket.lock().await;
         lock.insert(key, value);
     }
 
-    pub async fn kv_get(&self, key: &str) -> Option<String> {
+    pub async fn get(&self, key: &str) -> Option<String> {
         let mut lock = self.kv_bucket.lock().await;
         let obj = lock.get(key);
         let mut still_alive = true;
@@ -66,12 +65,12 @@ impl Storage {
         None
     }
 
-    pub async fn kv_del(&self, key: &str) -> Option<String> {
+    pub async fn del(&self, key: &str) -> Option<String> {
         let mut lock = self.kv_bucket.lock().await;
         lock.remove(key).map(|obj| obj.value)
     }
 
-    pub async fn list_lpush(&self, key: String, mut vals: Vec<String>) -> usize {
+    pub async fn lpush(&self, key: String, mut vals: Vec<String>) -> usize {
         let mut lock = self.list_bucket.lock().await;
         let list = lock.entry(key).or_insert(VecDeque::new());
         for val in vals {
@@ -80,14 +79,14 @@ impl Storage {
         list.len()
     }
 
-    pub async fn list_rpush(&self, key: String, mut vals: Vec<String>) -> usize {
+    pub async fn rpush(&self, key: String, mut vals: Vec<String>) -> usize {
         let mut lock = self.list_bucket.lock().await;
         let list = lock.entry(key).or_insert(VecDeque::new());
         list.extend(vals);
         list.len()
     }
 
-    pub async fn list_lrange(&self, key: String, mut start: i64, mut stop: i64) -> Vec<String> {
+    pub async fn lrange(&self, key: String, mut start: i64, mut stop: i64) -> Vec<String> {
         let mut lock = self.list_bucket.lock().await;
         let list = lock.entry(key).or_insert(VecDeque::new());
         if start < 0 {
@@ -104,7 +103,7 @@ impl Storage {
         list.make_contiguous()[start..stop].to_vec()
     }
 
-    pub async fn list_llen(&self, key: String) -> usize {
+    pub async fn llen(&self, key: String) -> usize {
         let mut lock = self.list_bucket.lock().await;
         let list = lock.get(&key);
         match list {
@@ -113,9 +112,9 @@ impl Storage {
         }
     }
 
-    pub async fn list_lpop(&self, key: String, mut n: usize) -> Option<Vec<String>> {
+    pub async fn lpop(&self, key: &str, mut n: usize) -> Option<Vec<String>> {
         let mut lock = self.list_bucket.lock().await;
-        let list = lock.get_mut(&key);
+        let list = lock.get_mut(key);
         if let Some(list) = list {
             let mut res = Vec::new();
             while n > 0
