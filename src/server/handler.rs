@@ -86,10 +86,10 @@ pub async fn handle_connection(
                     }
                 }
                 Command::Blpop(key, timeout) => {
-                    if timeout > 0 {
+                    if timeout > 0.0 {
                         let (tx_notify, mut rx_notify) = sync::oneshot::channel::<bool>();
                         tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_secs(timeout as u64)).await;
+                            tokio::time::sleep(Duration::from_secs_f64(timeout)).await;
                             tx_notify.send(true).expect("cannot send stop signal");
                         });
                         loop {

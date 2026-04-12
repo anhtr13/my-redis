@@ -12,7 +12,7 @@ pub enum Command {
     Lrange(String, i64, i64),
     Llen(String),
     Lpop(String, usize),
-    Blpop(String, usize),
+    Blpop(String, f64),
     Other,
 }
 
@@ -98,7 +98,7 @@ impl Command {
             }
             "BLPOP" => {
                 anyhow::ensure!(args.len() == 3);
-                let timeout: usize = args.pop().unwrap().parse()?;
+                let timeout: f64 = args.pop().unwrap().parse()?;
                 let key = args.pop().unwrap();
                 Ok(Self::Blpop(key, timeout))
             }
