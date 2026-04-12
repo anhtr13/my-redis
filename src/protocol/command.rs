@@ -13,6 +13,7 @@ pub enum Command {
     Llen(String),
     Lpop(String, usize),
     Blpop(String, f64),
+    Type(String),
     Other,
 }
 
@@ -101,6 +102,11 @@ impl Command {
                 let timeout: f64 = args.pop().unwrap().parse()?;
                 let key = args.pop().unwrap();
                 Ok(Self::Blpop(key, timeout))
+            }
+            "TYPE" => {
+                anyhow::ensure!(args.len() == 2);
+                let key = args.pop().unwrap();
+                Ok(Self::Type(key))
             }
             _ => Ok(Self::Other),
         }

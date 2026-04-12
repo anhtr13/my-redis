@@ -52,7 +52,7 @@ pub async fn handle_connection(
                 }
                 Command::Lrange(key, start, stop) => {
                     let vals: Vec<_> = storage
-                        .lrange(key, start, stop)
+                        .lrange(&key, start, stop)
                         .await
                         .into_iter()
                         .map(DataType::BulkString)
@@ -61,7 +61,7 @@ pub async fn handle_connection(
                     writer.write_all(&res.serialize()).await?;
                 }
                 Command::Llen(key) => {
-                    let length = storage.llen(key).await;
+                    let length = storage.llen(&key).await;
                     writer
                         .write_all(format!(":{length}\r\n").as_bytes())
                         .await?;
@@ -123,6 +123,11 @@ pub async fn handle_connection(
                             tokio::time::sleep(Duration::from_millis(100)).await;
                         }
                     }
+                }
+                Command::Type(key) => {
+                    let val = storage.key_type(&key).await;
+                    let res = format!("+{val}\r\n").into_bytes();
+                    writer.write_all(&res).await?;
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
