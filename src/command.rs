@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::protocol::data_type::DataType;
+use crate::encoding::Encoding;
 
 pub enum Command {
     Ping,
@@ -19,14 +19,14 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn from(data: DataType) -> Result<Self> {
-        let DataType::Array(array) = data else {
+    pub fn from(data: Encoding) -> Result<Self> {
+        let Encoding::Array(array) = data else {
             anyhow::bail!("unknow command")
         };
         let mut args: Vec<_> = array
             .into_iter()
             .filter_map(|arg| match arg {
-                DataType::BulkString(value) => Some(value),
+                Encoding::BulkString(value) => Some(value),
                 _ => None,
             })
             .collect();

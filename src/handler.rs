@@ -7,8 +7,8 @@ use tokio::{
 };
 
 use crate::{
-    protocol::{command::Command, data_type::DataType},
-    server::storage::Storage,
+    storage::Storage,
+    {command::Command, encoding::Encoding},
 };
 
 pub async fn handle_connection(
@@ -20,7 +20,7 @@ pub async fn handle_connection(
     let mut reader = BufReader::new(reader);
 
     loop {
-        let data = DataType::deserialize(&mut reader).await?;
+        let data = Encoding::deserialize(&mut reader).await?;
         match Command::from(data) {
             Ok(cmd) => match cmd {
                 Command::Ping => writer.write_all(b"+PONG\r\n").await?,
@@ -56,9 +56,9 @@ pub async fn handle_connection(
                         .range(&key, start, stop)
                         .await
                         .into_iter()
-                        .map(DataType::BulkString)
+                        .map(Encoding::BulkString)
                         .collect();
-                    let res = DataType::Array(vals);
+                    let res = Encoding::Array(vals);
                     writer.write_all(&res.serialize()).await?;
                 }
                 Command::Llen(key) => {
@@ -74,12 +74,12 @@ pub async fn handle_connection(
                             if arr.is_empty() {
                                 writer.write_all(b"$-1\r\n").await?;
                             } else if arr.len() == 1 {
-                                let res = DataType::BulkString(arr.pop().unwrap());
+                                let res = Encoding::BulkString(arr.pop().unwrap());
                                 writer.write_all(&res.serialize()).await?;
                             } else {
                                 let value: Vec<_> =
-                                    arr.into_iter().map(DataType::BulkString).collect();
-                                let res = DataType::Array(value);
+                                    arr.into_iter().map(Encoding::BulkString).collect();
+                                let res = Encoding::Array(value);
                                 writer.write_all(&res.serialize()).await?;
                             }
                         }
@@ -97,7 +97,7 @@ pub async fn handle_connection(
                             tokio::select! {
                                 val = storage.list_bucket.pop(&key, 1) => {
                                     if let Some(val) = val && let Some(val) = val.into_iter().next() {
-                                        let res = DataType::Array(vec![DataType::BulkString(key), DataType::BulkString(val)]);
+                                        let res = Encoding::Array(vec![Encoding::BulkString(key), Encoding::BulkString(val)]);
                                         writer.write_all(&res.serialize()).await?;
                                         break
                                     }
@@ -114,9 +114,9 @@ pub async fn handle_connection(
                             if let Some(val) = val
                                 && let Some(val) = val.into_iter().next()
                             {
-                                let res = DataType::Array(vec![
-                                    DataType::BulkString(key),
-                                    DataType::BulkString(val),
+                                let res = Encoding::Array(vec![
+                                    Encoding::BulkString(key),
+                                    Encoding::BulkString(val),
                                 ]);
                                 writer.write_all(&res.serialize()).await?;
                                 break;
@@ -133,13 +133,13 @@ pub async fn handle_connection(
                 Command::XAdd(key, id, values) => {
                     let id = storage.stream_bucket.add(key, id, values).await;
                     writer
-                        .write_all(&DataType::BulkString(id).serialize())
+                        .write_all(&Encoding::BulkString(id).serialize())
                         .await?;
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
             Err(e) => {
-                let err = DataType::BulkError(e.to_string());
+                let err = Encoding::BulkError(e.to_string());
                 writer.write_all(&err.serialize()).await?;
             }
         }

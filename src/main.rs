@@ -1,11 +1,13 @@
-mod protocol;
-mod server;
+mod command;
+mod encoding;
+mod handler;
+mod storage;
 
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
-use crate::server::{handler::handle_connection, storage::Storage};
+use crate::{handler::handle_connection, storage::Storage};
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {

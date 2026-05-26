@@ -7,14 +7,14 @@ use std::{
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 #[derive(Debug, Clone)]
-pub enum DataType {
+pub enum Encoding {
     SimpleString(String),
     SimpleError(String),
     Integer(i64),
     BulkString(String),
     NullBulkString,
     BulkError(String),
-    Array(Vec<DataType>),
+    Array(Vec<Encoding>),
     NullBulkArray,
     Null,
     Boolean(bool),
@@ -24,21 +24,21 @@ pub enum DataType {
     /// ex: x = BigNumber{value:[a,b,c], positive=false} => x = -(a + b * 10^9 + c * 10^(9*2))
     BigNumber(bool, Vec<u32>),
     VerbatimString(String, String), // (encoding, data)
-    Map(HashMap<DataType, DataType>),
-    Attribute(HashMap<DataType, DataType>),
-    Set(HashSet<DataType>),
-    Push(Vec<DataType>),
+    Map(HashMap<Encoding, Encoding>),
+    Attribute(HashMap<Encoding, Encoding>),
+    Set(HashSet<Encoding>),
+    Push(Vec<Encoding>),
 }
 
-impl PartialEq for DataType {
+impl PartialEq for Encoding {
     fn eq(&self, other: &Self) -> bool {
         self.serialize() == other.serialize()
     }
 }
 
-impl Eq for DataType {}
+impl Eq for Encoding {}
 
-impl Hash for DataType {
+impl Hash for Encoding {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.serialize().hash(state);
     }
@@ -46,7 +46,7 @@ impl Hash for DataType {
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-impl DataType {
+impl Encoding {
     pub fn deserialize<'a, R: AsyncBufReadExt + Unpin + Send>(
         reader: &'a mut R,
     ) -> BoxFuture<'a, anyhow::Result<Self>> {
