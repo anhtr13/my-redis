@@ -1,6 +1,6 @@
 # My Redis
 
-A toy Redis clone that's capable of handling basic commands like `PING`, `SET` and `GET`.
+A toy Redis clone that's capable of handling basic commands like `PING`, `SET` and `GET`.  
 Build to learn about the Redis protocol, event loops, etc.
 
 Part of the ["Build Your Own Redis"](https://codecrafters.io/challenges/redis) challenge:

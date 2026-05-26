@@ -131,10 +131,18 @@ pub async fn handle_connection(
                     writer.write_all(&res).await?;
                 }
                 Command::XAdd(key, id, values) => {
-                    let id = storage.stream_bucket.add(key, id, values).await;
-                    writer
-                        .write_all(&Encoding::BulkString(id).serialize())
-                        .await?;
+                    match storage.stream_bucket.add(key, id, values).await {
+                        Ok(id) => {
+                            writer
+                                .write_all(&Encoding::BulkString(id).serialize())
+                                .await?;
+                        }
+                        Err(e) => {
+                            let err_msg =
+                                Encoding::SimpleError(format!("ERR The ID specified in XADD {e}"));
+                            writer.write_all(&err_msg.serialize()).await?;
+                        }
+                    };
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
