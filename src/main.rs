@@ -9,8 +9,6 @@ use crate::server::{handler::handle_connection, storage::Storage};
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
-    println!("Logs from program:");
-
     let listener = TcpListener::bind("127.0.0.1:6379")
         .await
         .expect("failed to listening");

@@ -14,6 +14,7 @@ pub enum Command {
     Lpop(String, usize),
     Blpop(String, f64),
     Type(String),
+    XAdd(String, String, Vec<String>),
     Other,
 }
 
@@ -107,6 +108,13 @@ impl Command {
                 anyhow::ensure!(args.len() == 2);
                 let key = args.pop().unwrap();
                 Ok(Self::Type(key))
+            }
+            "XADD" => {
+                anyhow::ensure!(args.len() >= 3);
+                let entries = args.split_off(3);
+                let id = args.pop().unwrap();
+                let key = args.pop().unwrap();
+                Ok(Self::XAdd(key, id, entries))
             }
             _ => Ok(Self::Other),
         }

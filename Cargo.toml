@@ -1,7 +1,6 @@
 [package]
-name = "redis-rs"
+name = "my-redis"
 version = "0.1.0"
-authors = ["Codecrafters <hello@codecrafters.io>"]
 edition = "2024"
 rust-version = "1.93"
 

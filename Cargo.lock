@@ -123,6 +123,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "my-redis"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "tokio",
+]
+
+[[package]]
 name = "num_cpus"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -186,15 +195,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "redis-rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "tokio",
 ]
 
 [[package]]

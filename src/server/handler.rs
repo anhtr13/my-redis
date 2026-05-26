@@ -29,11 +29,11 @@ pub async fn handle_connection(
                     writer.write_all(&res).await?;
                 }
                 Command::Set(key, val, ttl) => {
-                    storage.set(key, val, ttl).await;
+                    storage.kv_bucket.set(key, val, ttl).await;
                     writer.write_all(b"+OK\r\n").await?;
                 }
                 Command::Get(key) => {
-                    let value = storage.get(&key).await;
+                    let value = storage.kv_bucket.get(&key).await;
                     match value {
                         Some(value) => {
                             let res = format!("${}\r\n{}\r\n", value.len(), value).into_bytes();
@@ -43,16 +43,17 @@ pub async fn handle_connection(
                     }
                 }
                 Command::Lpush(key, vals) => {
-                    let n = storage.lpush(key, vals).await;
+                    let n = storage.list_bucket.lpush(key, vals).await;
                     writer.write_all(format!(":{n}\r\n").as_bytes()).await?;
                 }
                 Command::Rpush(key, vals) => {
-                    let n = storage.rpush(key, vals).await;
+                    let n = storage.list_bucket.rpush(key, vals).await;
                     writer.write_all(format!(":{n}\r\n").as_bytes()).await?;
                 }
                 Command::Lrange(key, start, stop) => {
                     let vals: Vec<_> = storage
-                        .lrange(&key, start, stop)
+                        .list_bucket
+                        .range(&key, start, stop)
                         .await
                         .into_iter()
                         .map(DataType::BulkString)
@@ -61,13 +62,13 @@ pub async fn handle_connection(
                     writer.write_all(&res.serialize()).await?;
                 }
                 Command::Llen(key) => {
-                    let length = storage.llen(&key).await;
+                    let length = storage.list_bucket.len(&key).await;
                     writer
                         .write_all(format!(":{length}\r\n").as_bytes())
                         .await?;
                 }
                 Command::Lpop(key, n) => {
-                    let res = storage.lpop(&key, n).await;
+                    let res = storage.list_bucket.pop(&key, n).await;
                     match res {
                         Some(mut arr) => {
                             if arr.is_empty() {
@@ -94,7 +95,7 @@ pub async fn handle_connection(
                         });
                         loop {
                             tokio::select! {
-                                val = storage.lpop(&key, 1) => {
+                                val = storage.list_bucket.pop(&key, 1) => {
                                     if let Some(val) = val && let Some(val) = val.into_iter().next() {
                                         let res = DataType::Array(vec![DataType::BulkString(key), DataType::BulkString(val)]);
                                         writer.write_all(&res.serialize()).await?;
@@ -109,7 +110,7 @@ pub async fn handle_connection(
                         }
                     } else {
                         loop {
-                            let val = storage.lpop(&key, 1).await;
+                            let val = storage.list_bucket.pop(&key, 1).await;
                             if let Some(val) = val
                                 && let Some(val) = val.into_iter().next()
                             {
@@ -128,6 +129,12 @@ pub async fn handle_connection(
                     let val = storage.key_type(&key).await;
                     let res = format!("+{val}\r\n").into_bytes();
                     writer.write_all(&res).await?;
+                }
+                Command::XAdd(key, id, values) => {
+                    let id = storage.stream_bucket.add(key, id, values).await;
+                    writer
+                        .write_all(&DataType::BulkString(id).serialize())
+                        .await?;
                 }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },

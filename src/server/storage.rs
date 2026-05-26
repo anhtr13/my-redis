@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -12,20 +11,17 @@ struct KVObject {
     expired_at: u128,
 }
 
-pub struct Storage {
-    kv_bucket: Arc<Mutex<HashMap<String, KVObject>>>,
-    list_bucket: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
+#[allow(unused)]
+struct StreamEntry {
+    id: String,
+    values: Vec<String>,
 }
 
-#[allow(unused)]
-impl Storage {
-    pub fn new() -> Self {
-        Self {
-            kv_bucket: Arc::new(Mutex::new(HashMap::new())),
-            list_bucket: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
+pub struct KVBucket(Mutex<HashMap<String, KVObject>>);
+pub struct ListBucket(Mutex<HashMap<String, VecDeque<String>>>);
+pub struct StreamBucket(Mutex<HashMap<String, Vec<StreamEntry>>>);
 
+impl KVBucket {
     pub async fn set(&self, key: String, value: String, ttl: u64) {
         let expired_at = match ttl {
             0 => 0,
@@ -38,12 +34,12 @@ impl Storage {
             }
         };
         let value = KVObject { value, expired_at };
-        let mut lock = self.kv_bucket.lock().await;
+        let mut lock = self.0.lock().await;
         lock.insert(key, value);
     }
 
     pub async fn get(&self, key: &str) -> Option<String> {
-        let mut lock = self.kv_bucket.lock().await;
+        let mut lock = self.0.lock().await;
         let obj = lock.get(key);
         let mut still_alive = true;
         if let Some(obj) = obj {
@@ -65,13 +61,16 @@ impl Storage {
         None
     }
 
+    #[allow(unused)]
     pub async fn del(&self, key: &str) -> Option<String> {
-        let mut lock = self.kv_bucket.lock().await;
+        let mut lock = self.0.lock().await;
         lock.remove(key).map(|obj| obj.value)
     }
+}
 
-    pub async fn lpush(&self, key: String, mut vals: Vec<String>) -> usize {
-        let mut lock = self.list_bucket.lock().await;
+impl ListBucket {
+    pub async fn lpush(&self, key: String, vals: Vec<String>) -> usize {
+        let mut lock = self.0.lock().await;
         let list = lock.entry(key).or_insert(VecDeque::new());
         for val in vals {
             list.push_front(val);
@@ -79,15 +78,15 @@ impl Storage {
         list.len()
     }
 
-    pub async fn rpush(&self, key: String, mut vals: Vec<String>) -> usize {
-        let mut lock = self.list_bucket.lock().await;
+    pub async fn rpush(&self, key: String, vals: Vec<String>) -> usize {
+        let mut lock = self.0.lock().await;
         let list = lock.entry(key).or_insert(VecDeque::new());
         list.extend(vals);
         list.len()
     }
 
-    pub async fn lrange(&self, key: &str, mut start: i64, mut stop: i64) -> Vec<String> {
-        let mut lock = self.list_bucket.lock().await;
+    pub async fn range(&self, key: &str, mut start: i64, mut stop: i64) -> Vec<String> {
+        let lock = self.0.lock().await;
         let Some(list) = lock.get(key) else {
             return Vec::new();
         };
@@ -97,21 +96,19 @@ impl Storage {
         if stop < 0 {
             stop += list.len() as i64;
         }
-        let mut start = start.max(0) as usize;
-        let stop = (stop.max(0) as usize + 1).min(list.len());
-        let mut res = Vec::new();
-        for val in list.iter().skip(start) {
-            if start >= stop {
-                break;
-            }
-            start += 1;
-            res.push(val.to_owned());
-        }
+        let skip = start.max(0) as usize;
+        let length = (stop.max(0) as usize + 1).min(list.len()) - skip;
+        let res: Vec<_> = list
+            .iter()
+            .skip(skip)
+            .take(length)
+            .map(|val| val.to_owned())
+            .collect();
         res
     }
 
-    pub async fn llen(&self, key: &str) -> usize {
-        let mut lock = self.list_bucket.lock().await;
+    pub async fn len(&self, key: &str) -> usize {
+        let lock = self.0.lock().await;
         let list = lock.get(key);
         match list {
             Some(list) => list.len(),
@@ -119,8 +116,8 @@ impl Storage {
         }
     }
 
-    pub async fn lpop(&self, key: &str, mut n: usize) -> Option<Vec<String>> {
-        let mut lock = self.list_bucket.lock().await;
+    pub async fn pop(&self, key: &str, mut n: usize) -> Option<Vec<String>> {
+        let mut lock = self.0.lock().await;
         let list = lock.get_mut(key);
         if let Some(list) = list {
             let mut res = Vec::new();
@@ -134,15 +131,50 @@ impl Storage {
         }
         None
     }
+}
+
+impl StreamBucket {
+    pub async fn add(&self, key: String, id: String, values: Vec<String>) -> String {
+        self.0
+            .lock()
+            .await
+            .entry(key)
+            .or_insert(Vec::new())
+            .push(StreamEntry {
+                id: id.clone(),
+                values,
+            });
+        id
+    }
+}
+
+pub struct Storage {
+    pub kv_bucket: KVBucket,
+    pub list_bucket: ListBucket,
+    pub stream_bucket: StreamBucket,
+}
+
+impl Storage {
+    pub fn new() -> Self {
+        Self {
+            kv_bucket: KVBucket(Mutex::new(HashMap::new())),
+            list_bucket: ListBucket(Mutex::new(HashMap::new())),
+            stream_bucket: StreamBucket(Mutex::new(HashMap::new())),
+        }
+    }
 
     pub async fn key_type(&self, key: &str) -> String {
-        let lock = self.kv_bucket.lock().await;
+        let lock = self.kv_bucket.0.lock().await;
         if lock.contains_key(key) {
             return "string".to_string();
         }
-        let lock = self.list_bucket.lock().await;
+        let lock = self.list_bucket.0.lock().await;
         if lock.contains_key(key) {
             return "list".to_string();
+        }
+        let lock = self.stream_bucket.0.lock().await;
+        if lock.contains_key(key) {
+            return "stream".to_string();
         }
         "none".to_string()
     }
