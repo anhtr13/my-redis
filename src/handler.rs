@@ -176,29 +176,32 @@ pub async fn handle_connection(
                         }
                     };
                 }
-                Command::XRead(key, id) => {
-                    match storage.stream_bucket.read(&key, &id).await {
-                        Ok(entries) => {
-                            let entries: Vec<_> = entries
-                                .into_iter()
-                                .map(|e| {
-                                    Encoding::Array(vec![
-                                        Encoding::BulkString(e.id.to_string()),
-                                        Encoding::Array(
-                                            e.values
-                                                .into_iter()
-                                                .map(Encoding::BulkString)
-                                                .collect(),
-                                        ),
-                                    ])
-                                })
-                                .collect();
-                            let res = Encoding::Array(vec![
-                                Encoding::BulkString(key),
-                                Encoding::Array(entries),
-                            ]);
+                Command::XRead(keys, ids) => {
+                    match storage.stream_bucket.read(keys, ids).await {
+                        Ok(res) => {
+                            let mut response = Vec::new();
+                            for (key, entries) in res.into_iter() {
+                                let entries: Vec<_> = entries
+                                    .into_iter()
+                                    .map(|e| {
+                                        Encoding::Array(vec![
+                                            Encoding::BulkString(e.id.to_string()),
+                                            Encoding::Array(
+                                                e.values
+                                                    .into_iter()
+                                                    .map(Encoding::BulkString)
+                                                    .collect(),
+                                            ),
+                                        ])
+                                    })
+                                    .collect();
+                                response.push(Encoding::Array(vec![
+                                    Encoding::BulkString(key),
+                                    Encoding::Array(entries),
+                                ]));
+                            }
                             writer
-                                .write_all(&Encoding::Array(vec![res]).serialize())
+                                .write_all(&Encoding::Array(response).serialize())
                                 .await?;
                         }
                         Err(e) => {

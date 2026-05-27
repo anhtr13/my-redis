@@ -100,30 +100,40 @@ impl StreamBucket {
         }
     }
 
-    pub async fn read(&self, key: &str, id: &str) -> Result<Vec<StreamEntry>> {
-        let Some((millis_time, sequence_num)) = id.split_once('-') else {
-            anyhow::bail!("has invalid format");
-        };
-        let id = StreamId {
-            millis_time: millis_time.parse()?,
-            sequence_num: sequence_num.parse()?,
-        };
-        match self.0.lock().await.get(key) {
-            Some(stream) => {
-                let res: Vec<_> = stream
-                    .iter()
-                    .filter_map(|entry| {
-                        if entry.id >= id {
-                            Some(entry.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                Ok(res)
-            }
-            None => Ok(Vec::new()),
+    pub async fn read(
+        &self,
+        keys: Vec<String>,
+        ids: Vec<String>,
+    ) -> Result<Vec<(String, Vec<StreamEntry>)>> {
+        let mut res = Vec::new();
+        let bucket = self.0.lock().await;
+        for (idx, key) in keys.into_iter().enumerate() {
+            let Some((millis_time, sequence_num)) = ids[idx].split_once('-') else {
+                anyhow::bail!("has invalid format");
+            };
+            let id = StreamId {
+                millis_time: millis_time.parse()?,
+                sequence_num: sequence_num.parse()?,
+            };
+            let entries = match bucket.get(&key) {
+                Some(stream) => {
+                    let v: Vec<_> = stream
+                        .iter()
+                        .filter_map(|entry| {
+                            if entry.id >= id {
+                                Some(entry.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    v
+                }
+                None => Vec::new(),
+            };
+            res.push((key, entries));
         }
+        Ok(res)
     }
 
     async fn parse_id(&self, key: &str, id: &str) -> Result<StreamId> {
