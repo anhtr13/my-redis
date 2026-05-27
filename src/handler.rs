@@ -138,9 +138,41 @@ pub async fn handle_connection(
                                 .await?;
                         }
                         Err(e) => {
-                            let err_msg =
-                                Encoding::SimpleError(format!("ERR The ID specified in XADD {e}"));
-                            writer.write_all(&err_msg.serialize()).await?;
+                            writer
+                                .write_all(
+                                    format!("-ERR The ID specified in XADD {e}\r\n").as_bytes(),
+                                )
+                                .await?;
+                        }
+                    };
+                }
+                Command::XRange(key, start, stop) => {
+                    match storage.stream_bucket.range(&key, &start, &stop).await {
+                        Ok(entries) => {
+                            let entries: Vec<_> = entries
+                                .into_iter()
+                                .map(|e| {
+                                    Encoding::Array(vec![
+                                        Encoding::BulkString(e.id.to_string()),
+                                        Encoding::Array(
+                                            e.values
+                                                .into_iter()
+                                                .map(Encoding::BulkString)
+                                                .collect(),
+                                        ),
+                                    ])
+                                })
+                                .collect();
+                            writer
+                                .write_all(&Encoding::Array(entries).serialize())
+                                .await?;
+                        }
+                        Err(e) => {
+                            writer
+                                .write_all(
+                                    format!("-ERR The ID specified in XRANGE {e}\r\n").as_bytes(),
+                                )
+                                .await?;
                         }
                     };
                 }

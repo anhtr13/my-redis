@@ -1,10 +1,10 @@
 #!/bin/sh
 
-set -e # Exit early if any commands fail
+set -e
 
 (
-    cd "$(dirname "$0")" # Ensure compile steps are run within the repository directory
-    cargo build --release --target-dir=/tmp/codecrafters-build-redis-rust --manifest-path Cargo.toml
+    cd "$(dirname "$0")"
+    cargo build --release --target-dir=/tmp/build-redis-rust --manifest-path Cargo.toml
 )
 
 exec /tmp/codecrafters-build-redis-rust/release/my-redis "$@"

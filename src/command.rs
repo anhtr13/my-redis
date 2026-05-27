@@ -15,6 +15,7 @@ pub enum Command {
     Blpop(String, f64),
     Type(String),
     XAdd(String, String, Vec<String>),
+    XRange(String, String, String),
     Other,
 }
 
@@ -115,6 +116,13 @@ impl Command {
                 let id = args.pop().unwrap();
                 let key = args.pop().unwrap();
                 Ok(Self::XAdd(key, id, entries))
+            }
+            "XRANGE" => {
+                anyhow::ensure!(args.len() == 4);
+                let stop = args.pop().unwrap();
+                let start = args.pop().unwrap();
+                let key = args.pop().unwrap();
+                Ok(Self::XRange(key, start, stop))
             }
             _ => Ok(Self::Other),
         }
