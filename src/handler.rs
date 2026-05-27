@@ -176,6 +176,40 @@ pub async fn handle_connection(
                         }
                     };
                 }
+                Command::XRead(key, id) => {
+                    match storage.stream_bucket.read(&key, &id).await {
+                        Ok(entries) => {
+                            let entries: Vec<_> = entries
+                                .into_iter()
+                                .map(|e| {
+                                    Encoding::Array(vec![
+                                        Encoding::BulkString(e.id.to_string()),
+                                        Encoding::Array(
+                                            e.values
+                                                .into_iter()
+                                                .map(Encoding::BulkString)
+                                                .collect(),
+                                        ),
+                                    ])
+                                })
+                                .collect();
+                            let res = Encoding::Array(vec![
+                                Encoding::BulkString(key),
+                                Encoding::Array(entries),
+                            ]);
+                            writer
+                                .write_all(&Encoding::Array(vec![res]).serialize())
+                                .await?;
+                        }
+                        Err(e) => {
+                            writer
+                                .write_all(
+                                    format!("-ERR The ID specified in XREAD {e}\r\n").as_bytes(),
+                                )
+                                .await?;
+                        }
+                    };
+                }
                 Command::Other => writer.write_all(b"+OK\r\n").await?,
             },
             Err(e) => {

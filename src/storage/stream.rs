@@ -38,20 +38,15 @@ pub struct StreamBucket(pub Mutex<HashMap<String, Vec<StreamEntry>>>);
 
 impl StreamBucket {
     pub async fn add(&self, key: String, id: String, values: Vec<String>) -> Result<String> {
-        let (millis_time, sequence_num) = self.parse_id(&key, &id).await?;
+        let id = self.parse_id(&key, &id).await?;
+        let res = format!("{}-{}", id.millis_time, id.sequence_num);
         self.0
             .lock()
             .await
             .entry(key)
             .or_insert(Vec::new())
-            .push(StreamEntry {
-                id: StreamId {
-                    millis_time,
-                    sequence_num,
-                },
-                values,
-            });
-        Ok(format!("{millis_time}-{sequence_num}"))
+            .push(StreamEntry { id, values });
+        Ok(res)
     }
 
     pub async fn range(&self, key: &str, start: &str, stop: &str) -> Result<Vec<StreamEntry>> {
@@ -105,13 +100,42 @@ impl StreamBucket {
         }
     }
 
-    async fn parse_id(&self, key: &str, id: &str) -> Result<(u128, u64)> {
+    pub async fn read(&self, key: &str, id: &str) -> Result<Vec<StreamEntry>> {
+        let Some((millis_time, sequence_num)) = id.split_once('-') else {
+            anyhow::bail!("has invalid format");
+        };
+        let id = StreamId {
+            millis_time: millis_time.parse()?,
+            sequence_num: sequence_num.parse()?,
+        };
+        match self.0.lock().await.get(key) {
+            Some(stream) => {
+                let res: Vec<_> = stream
+                    .iter()
+                    .filter_map(|entry| {
+                        if entry.id >= id {
+                            Some(entry.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Ok(res)
+            }
+            None => Ok(Vec::new()),
+        }
+    }
+
+    async fn parse_id(&self, key: &str, id: &str) -> Result<StreamId> {
         if id == "*" {
             let millis_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
-            return Ok((millis_time, 0));
+            return Ok(StreamId {
+                millis_time,
+                sequence_num: 0,
+            });
         }
         let Some((millis_time, sequence_num)) = id.split_once('-') else {
             anyhow::bail!("has invalid format");
@@ -149,6 +173,9 @@ impl StreamBucket {
                 }
             }
         }
-        Ok((millis_time, sequence_num))
+        Ok(StreamId {
+            millis_time,
+            sequence_num,
+        })
     }
 }

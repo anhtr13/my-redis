@@ -16,6 +16,7 @@ pub enum Command {
     Type(String),
     XAdd(String, String, Vec<String>),
     XRange(String, String, String),
+    XRead(String, String),
     Other,
 }
 
@@ -123,6 +124,13 @@ impl Command {
                 let start = args.pop().unwrap();
                 let key = args.pop().unwrap();
                 Ok(Self::XRange(key, start, stop))
+            }
+            "XREAD" => {
+                anyhow::ensure!(args.len() == 4);
+                anyhow::ensure!(args[1].to_uppercase() == "STREAMS");
+                let id = args.pop().unwrap();
+                let key = args.pop().unwrap();
+                Ok(Self::XRead(key, id))
             }
             _ => Ok(Self::Other),
         }
