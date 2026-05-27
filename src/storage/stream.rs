@@ -55,20 +55,36 @@ impl StreamBucket {
     }
 
     pub async fn range(&self, key: &str, start: &str, stop: &str) -> Result<Vec<StreamEntry>> {
-        let (time, number) = start.split_once('-').unwrap_or((start, "0"));
-        let time: u128 = time.parse()?;
-        let number: u64 = number.parse()?;
-        let start_id = StreamId {
-            millis_time: time,
-            sequence_num: number,
+        let start_id = match start {
+            "-" => StreamId {
+                millis_time: 0,
+                sequence_num: 0,
+            },
+            start => {
+                let (time, number) = start.split_once('-').unwrap_or((start, "0"));
+                let time: u128 = time.parse()?;
+                let number: u64 = number.parse()?;
+                StreamId {
+                    millis_time: time,
+                    sequence_num: number,
+                }
+            }
         };
 
-        let (time, number) = stop.split_once('-').unwrap_or((stop, "999"));
-        let time: u128 = time.parse()?;
-        let number: u64 = number.parse()?;
-        let stop_id = StreamId {
-            millis_time: time,
-            sequence_num: number,
+        let stop_id = match stop {
+            "+" => StreamId {
+                millis_time: u128::MAX,
+                sequence_num: u64::MAX,
+            },
+            stop => {
+                let (time, number) = stop.split_once('-').unwrap_or((stop, "999"));
+                let time: u128 = time.parse()?;
+                let number: u64 = number.parse()?;
+                StreamId {
+                    millis_time: time,
+                    sequence_num: number,
+                }
+            }
         };
 
         match self.0.lock().await.get(key) {
